@@ -1,5 +1,5 @@
 {
-    "name": "kareem/laravel-translation-scanner",
+    "name": "kareem919/laravel-translation-scanner",
     "description": "A Laravel package to scan and manage translation keys.",
     "type": "library",
     "license": "MIT",
