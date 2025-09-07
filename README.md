@@ -112,6 +112,4 @@ Protect routes by adding middleware in config/translations-scanner.php:
 - Fork the repo
 - Create a new branch (feature/my-feature)
 - Commit your changes
-
-
-Push & open a PR
+- Push & open a PR
