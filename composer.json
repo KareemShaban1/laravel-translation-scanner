@@ -1,0 +1,30 @@
+{
+    "name": "kareem/laravel-translation-scanner",
+    "description": "A Laravel package to scan and manage translation keys.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Kareem Shaban",
+            "email": "ShabanKareem919@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Kareem\\TranslationScanner\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Kareem\\TranslationScanner\\TranslationScannerServiceProvider"
+            ]
+        }
+    },
+    "require": {
+        "php": "^8.0",
+        "illuminate/support": "^10.0|^11.0"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
