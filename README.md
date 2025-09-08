@@ -22,7 +22,7 @@ Supports both `.php` and `.json` language files, live search, inline editing, sy
 Require the package via Composer:
 
 ```bash
-composer require kareem/laravel-translation-scanner
+composer require kareem919/laravel-translation-scanner
 ```
 
 ⚙️ Configuration
