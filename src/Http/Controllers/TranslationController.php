@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
+use Kareem\LaravelTranslationScanner\Src\Exceptions\TranslationScannerException;
 
 class TranslationController extends Controller
 {
@@ -116,17 +117,17 @@ class TranslationController extends Controller
         $file   = (string) $request->input('file');
         $locales = $request->input('locales', ['en', 'ar']); // keep same locales context
         $tab     = $request->input('tab', $locale); // keep active tab
-    
+
         if (str_ends_with($file, '.json')) {
             // JSON translations
             $jsonPath = lang_path($file);
-    
+
             if (!File::exists($jsonPath)) {
                 return response()->json(['error' => "File {$file} not found"], 404);
             }
-    
+
             $translations = json_decode(File::get($jsonPath), true) ?: [];
-    
+
             if (array_key_exists($key, $translations)) {
                 unset($translations[$key]);
                 File::put($jsonPath, json_encode($translations, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
@@ -134,39 +135,39 @@ class TranslationController extends Controller
         } else {
             // PHP translations
             $phpPath = lang_path($file);
-    
+
             if (!File::exists($phpPath)) {
                 return response()->json(['error' => "File {$file} not found"], 404);
             }
-    
+
             $translations = File::getRequire($phpPath);
             Arr::forget($translations, $key);
-    
+
             File::put($phpPath, '<?php return ' . var_export($translations, true) . ';');
         }
-    
+
         // Reload all translations (same as scan)
         $translations = [];
         $perPage = (int) $request->input('per_page', 25);
         $search  = strtolower($request->input('search', ''));
-    
+
         foreach ($locales as $loc) {
             $all = $this->loadTranslations($loc);
-    
+
             $all = collect($all)->filter(function ($item) use ($search) {
                 if (!$search) return true;
-    
+
                 return str_contains(strtolower($item['key'] ?? ''), $search)
                     || str_contains(strtolower($item['value'] ?? ''), $search)
                     || str_contains(strtolower($item['file'] ?? ''), $search);
             });
-    
+
             $all = $all->sortBy('key')->values();
-    
+
             $pageName    = "page_{$loc}";
             $currentPage = LengthAwarePaginator::resolveCurrentPage($pageName);
             $items       = $all->forPage($currentPage, $perPage)->values();
-    
+
             $translations[$loc] = new LengthAwarePaginator(
                 $items,
                 $all->count(),
@@ -180,9 +181,9 @@ class TranslationController extends Controller
                 ]
             );
         }
-    
+
         $activeLocale = $tab ?? $locales[0];
-    
+
         if ($request->ajax()) {
             return response()->json([
                 'success' => "Deleted translation {$key}",
@@ -195,74 +196,78 @@ class TranslationController extends Controller
                 'tab'     => $activeLocale,
             ]);
         }
-    
+
         return back()->with('success', "Deleted translation {$key}")
             ->withFragment($activeLocale);
     }
-    
+
 
 
     public function scan(Request $request)
     {
-        $locales = $request->input('locales', ['en', 'ar']);
-        $tab = $request->input('tab');
+        try {
+            $locales = $request->input('locales', ['en', 'ar']);
+            $tab = $request->input('tab');
 
-        Artisan::call('translations:scan', [
-            '--locales' => implode(',', $locales),
-        ]);
+            Artisan::call('translations:scan', [
+                '--locales' => implode(',', $locales),
+            ]);
 
-        if ($request->ajax()) {
-            $translations = [];
-            $perPage = (int) $request->input('per_page', 25);
-            $search  = strtolower($request->input('search', ''));
+            if ($request->ajax()) {
+                $translations = [];
+                $perPage = (int) $request->input('per_page', 25);
+                $search  = strtolower($request->input('search', ''));
 
-            foreach ($locales as $locale) {
-                $all = $this->loadTranslations($locale);
+                foreach ($locales as $locale) {
+                    $all = $this->loadTranslations($locale);
 
-                $all = collect($all)->filter(function ($item) use ($search) {
-                    if (!$search) return true;
+                    $all = collect($all)->filter(function ($item) use ($search) {
+                        if (!$search) return true;
 
-                    return str_contains(strtolower($item['key'] ?? ''), $search)
-                        || str_contains(strtolower($item['value'] ?? ''), $search)
-                        || str_contains(strtolower($item['file'] ?? ''), $search);
-                });
+                        return str_contains(strtolower($item['key'] ?? ''), $search)
+                            || str_contains(strtolower($item['value'] ?? ''), $search)
+                            || str_contains(strtolower($item['file'] ?? ''), $search);
+                    });
 
-                $all = $all->sortBy('key')->values();
+                    $all = $all->sortBy('key')->values();
 
-                $pageName    = "page_{$locale}";
-                $currentPage = LengthAwarePaginator::resolveCurrentPage($pageName);
-                $items       = $all->forPage($currentPage, $perPage)->values();
+                    $pageName    = "page_{$locale}";
+                    $currentPage = LengthAwarePaginator::resolveCurrentPage($pageName);
+                    $items       = $all->forPage($currentPage, $perPage)->values();
 
-                $translations[$locale] = new LengthAwarePaginator(
-                    $items,
-                    $all->count(),
-                    $perPage,
-                    $currentPage,
-                    [
-                        'path'      => $request->url(),
-                        'query'     => $request->query(),
-                        'pageName'  => $pageName,
-                        'fragment'  => $locale,
-                    ]
-                );
+                    $translations[$locale] = new LengthAwarePaginator(
+                        $items,
+                        $all->count(),
+                        $perPage,
+                        $currentPage,
+                        [
+                            'path'      => $request->url(),
+                            'query'     => $request->query(),
+                            'pageName'  => $pageName,
+                            'fragment'  => $locale,
+                        ]
+                    );
+                }
+
+                $activeLocale = $tab ?? $locales[0];
+
+                return response()->json([
+                    'success' => "Translations updated successfully!",
+                    'html'    => view('translation-scanner::partials.tabs-content', [
+                        'translations' => $translations,
+                        'locales'      => $locales,
+                        'perPage'      => $perPage,
+                        'search'       => $search,
+                    ])->render(),
+                    'tab'     => $activeLocale,
+                ]);
             }
 
-            $activeLocale = $tab ?? $locales[0];
-
-            return response()->json([
-                'success' => "Translations updated successfully!",
-                'html'    => view('translation-scanner::partials.tabs-content', [
-                    'translations' => $translations,
-                    'locales'      => $locales,
-                    'perPage'      => $perPage,
-                    'search'       => $search,
-                ])->render(),
-                'tab'     => $activeLocale,
-            ]);
+            return back()->with('success', "Translations synced successfully!")
+                ->withFragment($tab ?: null);
+        } catch (\Throwable $e) {
+            throw new TranslationScannerException("Scanning failed: " . $e->getMessage());
         }
-
-        return back()->with('success', "Translations synced successfully!")
-            ->withFragment($tab ?: null);
     }
 
 

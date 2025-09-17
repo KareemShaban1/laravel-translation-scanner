@@ -13,77 +13,138 @@ class ScanTranslations extends Command
     {--locales= : Comma-separated locales, e.g. en,ar}
     {--translate : Enable auto translation via Google API (experimental)}
     {--ignore= : Comma-separated paths to ignore (e.g. views,controllers)}
+    {--ignoreFile= : Comma-separated file names to ignore (e.g. welcome.blade.php,home.blade.php)}
+    {--ignoreDir= : Comma-separated directories to ignore (e.g. vendor,storage,cache)}
     {--overwrite : Overwrite existing translations with new ones}';
+
 
     protected $description = 'Scan Blade & PHP files recursively and update translation files';
 
     public function handle()
     {
-        $paths = $this->option('path')
-            ? explode(',', $this->option('path'))
-            : ['resources/views', 'app/Http/Controllers'];
+        try {
+            $paths = $this->option('path')
+                ? explode(',', $this->option('path'))
+                : ['resources/views', 'app/Http/Controllers'];
 
-        $ignore = $this->option('ignore')
-            ? explode(',', $this->option('ignore'))
-            : [];
+            $ignore = $this->option('ignore')
+                ? explode(',', $this->option('ignore'))
+                : [];
 
-        $locales = $this->option('locales')
-            ? explode(',', $this->option('locales'))
-            : ['en'];
+            $ignoreFiles = $this->option('ignoreFile')
+                ? array_map('trim', explode(',', $this->option('ignoreFile')))
+                : [];
 
-        foreach ($paths as $path) {
-            $path = trim($path);
+            $ignoreDirs = $this->option('ignoreDir')
+                ? array_map('trim', explode(',', $this->option('ignoreDir')))
+                : [];
 
-            foreach ($ignore as $skip) {
-                if (str_contains($path, trim($skip))) {
-                    $this->warn("⏭️ Skipping {$path} (ignored)");
-                    continue 2;
+            $locales = $this->option('locales')
+                ? explode(',', $this->option('locales'))
+                : ['en'];
+
+            foreach ($paths as $path) {
+                $path = trim($path);
+
+                foreach ($ignore as $skip) {
+                    if (str_contains($path, trim($skip))) {
+                        $this->warn("⏭️ Skipping {$path} (ignored)");
+                        continue 2;
+                    }
+                }
+
+                if (!File::exists(base_path($path))) {
+                    $this->error("❌ Path not found: {$path}");
+                    continue;
+                }
+
+                $this->info("🔎 Scanning files in: " . base_path($path));
+
+                $keys = $this->extractKeys(base_path($path), $ignoreFiles, $ignoreDirs);
+                $this->info("📂 Found " . count($keys) . " translation keys...");
+
+                foreach ($locales as $locale) {
+                    $this->updateTranslations($keys, $locale);
                 }
             }
 
-            $this->info("🔎 Scanning files in: " . base_path($path));
-
-            $keys = $this->extractKeys(base_path($path));
-            $this->info("📂 Found " . count($keys) . " translation keys...");
-
-            foreach ($locales as $locale) {
-                $this->updateTranslations($keys, $locale);
+            return Command::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->newLine();
+            $this->error("💥 An error occurred while scanning:");
+            $this->line("   " . $e->getMessage());
+            if ($this->option('verbose')) {
+                $this->line($e->getTraceAsString());
             }
+            return Command::FAILURE;
         }
-
-        return Command::SUCCESS;
     }
 
-    private function extractKeys(string $path): array
+
+    private function extractKeys(string $path, array $ignoreFiles = [], array $ignoreDirs = []): array
     {
-        $keys = [];
-        $files = File::allFiles($path);
-
-        $this->info("📂 Found " . count($files) . " files to scan...");
-        $bar = $this->output->createProgressBar(count($files));
-        $bar->setFormat("  Scanning [<fg=cyan>%bar%</>] %current%/%max% files");
-
-        foreach ($files as $file) {
-            $content = $file->getContents();
-
-            preg_match_all("/__\\(['\"](.+?)['\"]\\)/", $content, $matches1);
-            preg_match_all("/@lang\\(['\"](.+?)['\"]\\)/", $content, $matches2);
-            preg_match_all("/trans\\(['\"](.+?)['\"]\\)/", $content, $matches3);
-
-            $matches = array_merge($matches1[1], $matches2[1], $matches3[1]);
-
-            foreach ($matches as $match) {
-                $keys[] = $match;
+        try {
+            if (!File::exists($path)) {
+                $this->warn("⚠ Directory not found: {$path}");
+                return [];
             }
 
-            $bar->advance();
+            $keys = [];
+            $files = File::allFiles($path);
+
+            // Filter files based on ignore lists with wildcard support
+            $files = array_filter($files, function ($file) use ($ignoreFiles, $ignoreDirs) {
+                $filename = $file->getFilename();
+                $relativePath = $file->getRelativePath(); // relative dir inside scanned path
+                $dirname  = basename($relativePath);
+
+                // Check ignored files (exact match or wildcard)
+                foreach ($ignoreFiles as $pattern) {
+                    if ($filename === $pattern || fnmatch($pattern, $filename)) {
+                        return false;
+                    }
+                }
+
+                // Check ignored directories (exact match or wildcard)
+                foreach ($ignoreDirs as $pattern) {
+                    if ($dirname === $pattern || fnmatch($pattern, $dirname) || fnmatch($pattern, $relativePath)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+
+            $this->info("📂 Found " . count($files) . " files to scan...");
+            $bar = $this->output->createProgressBar(count($files));
+            $bar->setFormat("  Scanning [<fg=cyan>%bar%</>] %current%/%max% files");
+
+            foreach ($files as $file) {
+                $content = $file->getContents();
+
+                preg_match_all("/__\\(['\"](.+?)['\"]\\)/", $content, $matches1);
+                preg_match_all("/@lang\\(['\"](.+?)['\"]\\)/", $content, $matches2);
+                preg_match_all("/trans\\(['\"](.+?)['\"]\\)/", $content, $matches3);
+
+                $matches = array_merge($matches1[1], $matches2[1], $matches3[1]);
+
+                foreach ($matches as $match) {
+                    $keys[] = $match;
+                }
+
+                $bar->advance();
+            }
+
+            $bar->finish();
+            $this->newLine(2);
+
+            return array_unique($keys);
+        } catch (\Throwable $e) {
+            $this->error("❌ Failed to scan {$path}: " . $e->getMessage());
+            return [];
         }
-
-        $bar->finish();
-        $this->newLine(2);
-
-        return array_unique($keys);
     }
+
 
     private function updateTranslations(array $keys, string $locale): void
     {
@@ -99,7 +160,16 @@ class ScanTranslations extends Command
                     continue;
                 }
 
-                $phpGrouped[$file][] = $key;
+                // sanitize filename (avoid spaces, ?, special chars)
+                $safeFile = preg_replace('/[^A-Za-z0-9_\-]/', '_', $file);
+
+                // if file becomes empty, fallback to JSON
+                if (empty($safeFile)) {
+                    $jsonKeys[] = $fullKey;
+                    continue;
+                }
+
+                $phpGrouped[$safeFile][] = $key;
             } else {
                 $jsonKeys[] = $fullKey;
             }
@@ -126,9 +196,9 @@ class ScanTranslations extends Command
                 $safeKey = $this->makeSafeKey($key);
 
                 $shouldTranslate = !isset($translations[$safeKey])
-                || $this->option('overwrite')
-                || $this->needsTranslation($translations[$safeKey], $locale, $key);
-            
+                    || $this->option('overwrite')
+                    || $this->needsTranslation($translations[$safeKey], $locale, $key);
+
 
                 if ($shouldTranslate) {
                     $translations[$safeKey] = $this->option('translate')
@@ -145,12 +215,17 @@ class ScanTranslations extends Command
 
             ksort($translations);
 
-            File::put(
-                $langPath,
-                "<?php\n\nreturn " . var_export($translations, true) . ";\n"
-            );
-
-            $this->info("✅ Updated {$langPath} with {$new} new/updated keys.");
+            try {
+                File::put(
+                    $langPath,
+                    "<?php\n\nreturn " . var_export($translations, true) . ";\n"
+                );
+                $this->info("✅ Updated {$langPath} with {$new} new/updated keys.");
+            } catch (\Throwable $e) {
+                $this->error("❌ Failed to write file: {$langPath}");
+                $this->line("   Reason: " . $e->getMessage());
+            }
+            
         }
 
         // ---- Handle JSON ----
@@ -180,9 +255,9 @@ class ScanTranslations extends Command
             foreach ($jsonKeys as $key) {
                 $safeKey = $this->makeSafeKey($key);
                 $shouldTranslate = !isset($translations[$safeKey])
-                || $this->option('overwrite')
-                || $this->needsTranslation($translations[$safeKey], $locale, $key);
-            
+                    || $this->option('overwrite')
+                    || $this->needsTranslation($translations[$safeKey], $locale, $key);
+
 
                 if ($shouldTranslate) {
                     $translations[$safeKey] = $this->option('translate')
@@ -256,14 +331,17 @@ class ScanTranslations extends Command
             $url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl={$locale}&dt=t&q=" . urlencode($text);
 
             $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_TIMEOUT => 10,
+                CURLOPT_SSL_VERIFYPEER => false,
+            ]);
 
             $response = curl_exec($ch);
 
             if (curl_errno($ch)) {
+                $this->warn("⚠ Translation API error: " . curl_error($ch));
                 curl_close($ch);
                 return $text;
             }
@@ -271,12 +349,13 @@ class ScanTranslations extends Command
             curl_close($ch);
 
             $result = json_decode($response, true);
-
             return $result[0][0][0] ?? $text;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            $this->warn("⚠ Failed to translate '{$text}' to {$locale}: " . $e->getMessage());
             return $text;
         }
     }
+
 
     private function needsTranslation($value, string $locale, $key = null): bool
     {
@@ -284,27 +363,26 @@ class ScanTranslations extends Command
         if ($value === null || $value === '') {
             return true;
         }
-    
+
         // If same as key → not translated
         if ($key !== null && ($value === $key || $value === $this->cleanKey($key))) {
             return true;
         }
-    
+
         // Not a string
         if (!is_string($value)) {
             return true;
         }
-    
+
         // Wrong language detection
         if ($locale === 'ar' && preg_match('/^[a-zA-Z0-9\s]+$/', $value)) {
             return true;
         }
-    
+
         if ($locale === 'en' && preg_match('/[\p{Arabic}]/u', $value)) {
             return true;
         }
-    
+
         return false;
     }
-    
 }
