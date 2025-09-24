@@ -2,7 +2,6 @@
     "name": "kareem919/laravel-translation-scanner",
     "description": "A Laravel package to scan and manage translation keys.",
     "type": "library",
-    "version": "dev-master",
     "license": "MIT",
     "authors": [
         {
