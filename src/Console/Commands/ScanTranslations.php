@@ -13,9 +13,10 @@ class ScanTranslations extends Command
     {--locales= : Comma-separated locales, e.g. en,ar}
     {--translate : Enable auto translation via Google API (experimental)}
     {--ignore= : Comma-separated paths to ignore (e.g. views,controllers)}
-    {--ignoreFile= : Comma-separated file names to ignore (e.g. welcome.blade.php,home.blade.php)}
-    {--ignoreDir= : Comma-separated directories to ignore (e.g. vendor,storage,cache)}
+    {--ignore-file= : Comma-separated file names to ignore (e.g. welcome.blade.php,home.blade.php)}
+    {--ignore-dir= : Comma-separated directories to ignore (e.g. vendor,storage,cache)}
     {--overwrite : Overwrite existing translations with new ones}';
+
 
 
     protected $description = 'Scan Blade & PHP files recursively and update translation files';
