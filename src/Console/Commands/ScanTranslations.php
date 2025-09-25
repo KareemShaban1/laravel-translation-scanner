@@ -36,7 +36,7 @@ class ScanTranslations extends Command
                 ? array_map('trim', explode(',', $this->option('ignoreFile')))
                 : [];
 
-            $ignoreDirs = $this->option('ignoreFir')
+            $ignoreDirs = $this->option('ignoreDir')
                 ? array_map('trim', explode(',', $this->option('ignoreDir')))
                 : [];
 
